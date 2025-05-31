@@ -3,13 +3,13 @@ const sheetSetup = {
   postQueue: {
     name: 'PostQueue',
     headers: [
-      'Timestamp', 'Current_Retries', 'Currently_Running', 'Data'
+      'Timestamp', 'Current_Retries', 'Currently_Running', 'Sender_Id', 'Data'
     ]
   },
   postLogs: {
     name: 'PostLogs',
     headers: [
-    'Timestamp', 'Processing_Status', 'Retry_Count', 'Data'
+    'Timestamp', 'Processing_Status', 'Retry_Count', 'Sender_Id', 'Data'
     ]
   }
 }
@@ -19,13 +19,15 @@ function doPost(e) {
   const contents = JSON.parse(e.postData.contents)
   console.log("Contents: ", contents)
 
-  const status = insertPostRequestIntoQueue(contents)
+  const status = insertPostRequestIntoQueue(contents.crimes, contents.senderId)
   console.log({status})
   
   return ContentService.createTextOutput(JSON.stringify(status)).setMimeType(ContentService.MimeType.JSON);
 }
 
-function insertPostRequestIntoQueue(postData){
+function insertPostRequestIntoQueue(postData, senderId){
+  // console.log(postData)
+  // console.log(senderId)
   const status = { success: false, message: '' }
   
   try{
@@ -39,7 +41,7 @@ function insertPostRequestIntoQueue(postData){
       dataSegments.push(jsonString.slice(i, i + segmentSize));
     }
 
-    sheet.appendRow([ new Date().getTime(), 0, false, ...dataSegments ])
+    sheet.appendRow([ new Date().getTime(), 0, false, senderId, ...dataSegments ])
 
     status.success = true
     status.message = `Added to queue. Queue Number: ${sheet.getLastRow() - 1}`
