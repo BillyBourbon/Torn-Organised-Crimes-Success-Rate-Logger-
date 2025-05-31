@@ -1,0 +1,33 @@
+<div class="card" style="height:100%">
+  <div class="cardHeader">
+    <h2>Organised Crimes Role Success Logs</h2>
+    
+    <div style="gap: 20px;">
+      <select id="faction">
+        <?!=dropdownFactionOptions_() ?>
+      </select>
+
+      <select id="crime">
+        <?!=dropdownCrimeOptions_() ?>
+      </select>
+    </div>
+    
+    <button class="btn" onclick="handleSubmit()">Search</button>
+  </div>
+  <div class="cardContent">
+    <div id="resultsTable" class="table"></div>
+  </div>
+</div>
+<script defer>
+  function handleSubmit() {
+    const val1 = document.getElementById("faction").value;
+    const val2 = document.getElementById("crime").value;
+    console.log(`Submitted: ${val1} & ${val2}`);
+    const htmlTable = google.script.run.withSuccessHandler((e)=>{
+      console.log("Success. Response: ", {res: e})
+      document.getElementById("resultsTable").innerHTML = e
+    }).withFailureHandler((e)=>{
+      console.log("Failure. Response: ", {res: e})
+    }).loadMemberRoleTable(val1, val2)
+  }
+</script>
