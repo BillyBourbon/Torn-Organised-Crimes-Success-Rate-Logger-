@@ -1,23 +1,28 @@
-
 function setPostRouteSpreadsheetId(){
   const your_sheets_id_inbetween_the_quotes = "YOUR_SPREADSHEET_ID_FOR_THE_POST_ROUTE_QUEUE"
-  let x = setProp('postRouteSpreadsheetId', your_sheets_id_inbetween_the_quotes)
+  const x = setProp('postRouteSpreadsheetId', your_sheets_id_inbetween_the_quotes)
   console.log(x)
 }
 
-const retryLimit = 3
+function setProjectsTornAPIKey(){
+  const your_projects_api_key_in_between_the_quotes = ''
+  const x = setApiKey(your_projects_api_key_in_between_the_quotes)
+}
 
+
+
+const retryLimit = 3
 const sheetSetup = {
   postQueue: {
     name: 'PostQueue',
     headers: [
-      'Timestamp', 'Current_Retries', 'Currently_Running', 'Data'
+      'Timestamp', 'Current_Retries', 'Currently_Running', 'Sender_Id', 'Data'
     ]
   },
   postLogs: {
     name: 'PostLogs',
     headers: [
-    'Timestamp', 'Processing_Status', 'Retry_Count', 'Data'
+    'Timestamp', 'Processing_Status', 'Retry_Count', 'Sender_Id', 'Data'
     ]
   }
 }
@@ -25,9 +30,7 @@ const sheetSetup = {
 function handlePostDataQueue(){
   console.log('Starting To Handle Post Data Queue')
   const postRouteSpreadsheetId = getProp('postRouteSpreadsheetId')
-  
   if(postRouteSpreadsheetId === null || postRouteSpreadsheetId.length === 0) throw new Error('No Post Route Spreadsheet ID Set')
-  
   const queueSheet = getSheet(sheetSetup.postQueue.name, sheetSetup.postQueue.headers, postRouteSpreadsheetId)
 
   const logsSheet = getSheet(sheetSetup.postLogs.name, sheetSetup.postLogs.headers, postRouteSpreadsheetId)
@@ -40,15 +43,25 @@ function handlePostDataQueue(){
   // for(let i = 0; i < 12; i++){
   let retryCounterCurrentlyRunning = 0
   console.log(queueSheet.getRange(2,3).getValue())
-  while(queueSheet.getRange(2,3).getValue() === 'true'){
+  while(queueSheet.getRange(2,3).getValue() === true){
     console.log(`Next In Queue Already Being Ran. Attempt: ${retryCounterCurrentlyRunning + 1}`)
     Utilities.sleep(10000)
 
     if(retryCounterCurrentlyRunning === 11){
-      console.log('Cancelling Run As Already Running. Resetting Run State Of Previous Data Row')
-      queueSheet.getRange(2,3).setValue('false')
+      console.log('Cancelling Run As Already Running.')
+      
+      setProp('currentTriggerTimeouts', Number(getProp('currentTriggerTimeouts')) + 1)
+      
+      const currentTriggerTimeouts = getProp('currentTriggerTimeouts')
+      if(currentTriggerTimeouts >= 4){
+        console.log('Resetting Run State')
+        queueSheet.getRange(2,3).setValue(false)
+        setProp('currentTriggerTimeouts', 0)
+      }
+
       return
     }
+    retryCounterCurrentlyRunning++
   }
 
   console.log('Data ready to handle')
@@ -56,7 +69,7 @@ function handlePostDataQueue(){
 
   // Get next row in queue
   const [ row ] = queueSheet.getRange(2,1,1,queueSheet.getLastColumn()).getValues()
-  const [ timestamp, retryCount, currentlyRunning, ...data ] = row
+  const [ timestamp, retryCount, currentlyRunning, sender_Id, ...data ] = row
   
   // Set 1st in queue as running to prevent the script executing twice due to the 1min trigger.
   queueSheet.getRange(2,3).setValue('true')
@@ -85,14 +98,14 @@ function handlePostDataQueue(){
   // If retry counter is maxed then move row and mark as failure
   if(status){
     console.log('Appending New Success Row To Log Sheet')
-    logsSheet.appendRow([ timestamp, 'success', retryCount, ...data])
+    logsSheet.appendRow([ timestamp, 'success', retryCount, sender_Id, ...data])
 
     console.log('Removing Data Row From Queue Sheet')
     queueSheet.deleteRow(2)
   } else{
     if(retryCount + 1 >= retryLimit){
       console.log('Appending New Falure Row To Log Sheet')
-      logsSheet.appendRow([ timestamp, 'failure', retryCount + 1, ...data ])
+      logsSheet.appendRow([ timestamp, 'failure', retryCount + 1, sender_Id, ...data ])
 
       console.log('Removing Data Row From Queue Sheet')
       queueSheet.deleteRow(2)
@@ -103,8 +116,12 @@ function handlePostDataQueue(){
 function handlePostData(data, parsed = false){
   try{
     if(!parsed) data = JSON.parse(data)
+    const crimesAlreadyRan = getProp('crimesAlreadyRan') ? JSON.parse(getProp('crimesAlreadyRan')) : []
+
     Object.entries(data).forEach(([ crime, { tier, roles } ]) => {
       const crimeTitle = `${crime}_${tier}`
+
+      if(crimesAlreadyRan.includes(crimeTitle)) return
 
       const sheet = getSheet(crimeTitle, [
         "Player_Id"
@@ -137,10 +154,15 @@ function handlePostData(data, parsed = false){
             SpreadsheetApp.flush()
           } else row = rowFinder.getRow()
           
-          sheet.getRange(row,col).setValue(success)
+          const successRange = sheet.getRange(row,col)
+          if(Number(successRange.getValue()) < Number(success)) successRange.setValue(success)
           SpreadsheetApp.flush()
         })
       })
+
+      // add crimeTitle to props 
+      crimesAlreadyRan.push(crimeTitle)
+      setProp('crimesAlreadyRan', JSON.stringify(crimesAlreadyRan))
     })
 
     return true
@@ -150,73 +172,43 @@ function handlePostData(data, parsed = false){
   }
 }
 
+function checkCrimeSheetsForDuplicates(){
+  const sheets = SpreadsheetApp.getActiveSpreadsheet().getSheets()
+  sheets.forEach(sheet => {
+    if(sheet.getName().split('_').length === 1) return
+    
+    fixDuplicateRows_(sheet)
+  })
+}
 
-
-// Gets Sheet If It Exists Else Creates A New Sheet And Inserts Headers If Provided
-function getSheet(sheetName, headers=[[]], spreadsheetId = null){
-  if(typeof(headers) !== "object") headers = [headers]
-  if(typeof(headers[0]) !== "object") headers = [headers]
+function fixDuplicateRows_(sheet) {
+  const [header, ...rows] = sheet.getDataRange().getValues();
   
-  let sheet = null
-  if(spreadsheetId === null) sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName)
-  else sheet = SpreadsheetApp.openById(spreadsheetId).getSheetByName(sheetName)
+  if (rows.length === 0) return;
 
-  if(sheet === null) {
-    if(spreadsheetId === null) {
-      sheet = SpreadsheetApp.getActiveSpreadsheet().insertSheet(sheetName)
+  const mergedRows = {};
+
+  rows.forEach(row => {
+    const id = row[0];
+
+    if (!id) return;
+
+    if (!mergedRows[id]) {
+      const cleanRow = row.map(c => {return c === '' || c === null ? 0 : c})
+      mergedRows[id] = [...cleanRow];
     } else {
-      sheet = SpreadsheetApp.openById(spreadsheetId).insertSheet(sheetName)
+      for (let i = 1; i < row.length; i++) {
+        const current = Number(mergedRows[id][i] || 0);
+        const candidate = Number(row[i] || 0);
+        mergedRows[id][i] = Math.max(current, candidate);
+      }
     }
+  });
 
-    if(headers.length !== 0 && headers[0].length !== 0) sheet.getRange(1, 1, headers.length,headers[0].length).setValues(headers)
-  }
+  // Clear the sheet (except header)
+  sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
 
-  return sheet
-}
-
-
-function clearProp(propName, section="script"){
-  let prop = PropertiesService
-  if(section === "script") prop = prop.getScriptProperties()
-  if(section === "user") prop = prop.getUserProperties()
-  else return false
-  try{
-    prop.deleteProperty(propName)
-    return true
-  } catch(e) {return false}
-}
-
-function getProp(propName, section="script"){
-  let prop = PropertiesService
-  if(section === "script") prop = prop.getScriptProperties()
-  else if(section === "user") prop = prop.getUserProperties()
-  else return null
-  return prop.getProperty(propName)
-}
-
-function setProp(propName, value, section="script"){
-  console.log({propName, value, section})
-  let prop = PropertiesService
-  if(section === "script") prop = prop.getScriptProperties()
-  else if(section === "user") prop = prop.getUserProperties()
-  else return false
-  try{
-    prop.setProperty(propName, value)
-    return true
-  } catch(e) {return false}
-}
-
-function removeBlankSpaceInSheet(sheet, options={blankRows:false,blankColumns:false}){
-  if(options.blankRows){
-    const lastRow = sheet.getLastRow()
-    const maxRows = sheet.getMaxRows()
-    const rowDif = maxRows - lastRow
-    if(rowDif > 0) sheet.deleteRows(lastRow+1, rowDif)
-  }
-  if(options.blankColumns){
-    const lastCol = sheet.getLastColumn()
-    const maxCols = sheet.getMaxColumns()
-    const colDif = maxCols - lastCol
-    if(colDif > 0) sheet.deleteColumns(lastCol+1, colDif)
-  }
+  // Write cleaned data
+  const cleaned = Object.values(mergedRows);
+  sheet.getRange(2, 1, cleaned.length, cleaned[0].length).setValues(cleaned);
 }
