@@ -1,0 +1,25 @@
+<div class="card" style="height:100%;">
+  <div class="cardHeader">
+    <h2>Organised Crimes Role Success Logs</h2>
+    <select id="member">
+      <?!=dropdownMemberOptions() ?>
+    </select>
+
+    <button class="btn" onclick="handleSubmit()">Search</button>
+  </div>  
+  <div class="cardContent">
+    <div id="resultsTable" style="display: flex;flex-direction: column;align-items: center;gap: 20px;"></div>
+  </div>
+</div>
+<script defer>
+  function handleSubmit(e) {
+    const val1 = document.getElementById("member").value;
+    console.log(`Submitted: ${val1}`);
+    const htmlTable = google.script.run.withSuccessHandler((e)=>{
+      console.log("Success. Response: ", e)
+      document.getElementById("resultsTable").innerHTML = e
+    }).withFailureHandler((e) => {
+      console.log("Failure. Response: ", e)
+    }).loadIndividualMemberCrimesData(val1)
+  }
+</script>
