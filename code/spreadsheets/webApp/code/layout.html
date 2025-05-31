@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <base target="_top">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
+    <title>Bilbos Dumb Creations</title>
+    <link rel="stylesheet" href="https://ssl.gstatic.com/docs/script/css/add-ons1.css">
+    <?!=include("stylesheet") ?>
+    <script src= "https://ajax.googleapis.com/ajax/libs/jquery/3.4.0/jquery.min.js"></script>
+  </head>
+  <body>
+    <div class="mainContainer">
+      <?!= navBar() ?>
+      <div class="mainContent">
+        <?!= pageContent ?>
+      </div>
+      <?!= footer() ?>
+    </div>
+  </body>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const tables = document.querySelectorAll('table')
+      
+      tables.forEach(table => setupTableToSort(table))
+
+      const observer = new MutationObserver(mutations => {
+        mutations.forEach(mutation => {
+          mutation.addedNodes.forEach(node => {
+            if(node?.tagName === 'TABLE') {
+              console.log('Setting up table to be sorted. ', {node})
+              setupTableToSort(node)
+            } else{
+              node.querySelectorAll?.('table').forEach(table => {
+                console.log('Setting up table to be sorted. ', {node})
+                setupTableToSort(table)
+              })
+            }
+          })
+        })
+      })
+
+      observer.observe(document.body, { childList: true, subtree: true })
+    })
+
+    function setupTableToSort(table) {
+      if(table.dataset.sortSetup === true) return
+
+      const headers = table.querySelectorAll('th')
+      headers.forEach((header, i) => {
+        header.addEventListener('click', () => {
+          console.log('Header Clicked')
+          sortTable(table, i, headers)
+        })
+      })
+
+      table.dataset.sortSetup = true
+    }
+
+    function sortTable(table, index, headers) {
+      const header = headers[index]
+      const tbody = table.querySelector('tbody')
+
+      const rows = Array.from(tbody.querySelectorAll('tr'))
+
+      const sorted = rows.sort((a, b) => {
+        const aTextContent = a.children[index].textContent.trim()
+        const bTextContent = b.children[index].textContent.trim()
+
+        const isNumber = !isNaN(parseFloat(aTextContent)) && !isNaN(parseFloat(bTextContent))
+        if (isNumber) return parseFloat(aTextContent) - parseFloat(bTextContent)
+
+        return aTextContent.localeCompare(bTextContent)
+      })
+
+      if (header.classList.contains('asc')) {
+        sorted.reverse()
+        header.classList.remove('asc')
+        header.classList.add('desc')
+      } else {
+        headers.forEach(h => h.classList.remove('asc', 'desc'))
+        header.classList.add('asc')
+      }
+
+      tbody.innerHTML = ''
+      sorted.forEach(row => tbody.appendChild(row))
+    }
+  </script>
+</html>
